@@ -1,0 +1,1071 @@
+construi un algoritm destul de eficient care să detecteze tendința de înrăutățire a vremii pe baza evoluției presiunii atmosferice, folosind exclusiv un senzor barometric și istoricul măsurătorilor.
+
+Nu este necesar să ai o stație meteo completă. Poți începe cu un algoritm bazat pe analiza seriilor temporale și să îl dezvolți ulterior într-un sistem de avertizare predictivă.
+1. Ce informații putem extrage din presiunea atmosferică?
+Nu contează doar valoarea absolută a presiunii, ci mai ales modul în care aceasta evoluează în timp.
+
+Câteva situații relevante:
+Evoluția presiunii	Interpretare posibilă
+Presiune stabilă	Vreme relativ stabilă
+Scădere lentă	Posibilă schimbare a vremii
+Scădere rapidă	Posibilă deteriorare a vremii
+Scădere accelerată	Posibilă apropiere a unui sistem perturbator
+Creștere după o scădere	Posibilă ameliorare a vremii
+
+Orientativ, o scădere de 1-2 hPa în 3 ore poate indica o schimbare meteorologică, iar o scădere de 3-5 hPa în 3 ore poate fi un semnal mai puternic.
+
+Aceste praguri nu sunt universale: depind de regiune, anotimp și sistemul meteorologic.
+2. Ce algoritm aș construi?
+Aș utiliza o combinație de trei metode:
+- Analiza tendinței presiunii (Pressure Trend).
+- Analiza vitezei de variație (Rate of Change).
+- Detectarea accelerării variației (Second Derivative).
+Practic, algoritmul ar calcula permanent trei indicatori.
+
+A. Variația presiunii în ultimele 30 de minute
+\[
+\Delta P_{30}=P(t)-P(t-30min)
+\]
+
+B. Viteza de variație a presiunii
+\[
+V_P=\frac{P(t)-P(t-3h)}{3}
+\]
+
+Rezultatul este exprimat în hPa/oră.
+
+C. Accelerația variației presiunii
+\[
+A_P=\frac{V_P(t)-V_P(t-\Delta t)}{\Delta t}
+\]
+
+Aceasta poate identifica situațiile în care presiunea începe să scadă din ce în ce mai repede.
+3. Cum ar funcționa sistemul de alertare?
+Aș propune inițial patru niveluri:
+Nivel 0 – Normal
+Verde
+
+Presiune stabilă sau în creștere.
+Nivel 1 – Atenție
+Galben
+
+Scădere moderată și susținută a presiunii.
+Nivel 2 – Deteriorare probabilă
+Portocaliu
+
+Scădere rapidă a presiunii, confirmată pe mai multe intervale de timp.
+Nivel 3 – Deteriorare accentuată
+Roșu
+
+Scădere foarte rapidă sau accelerată, care persistă.
+Important: acestea sunt niveluri experimentale de risc, nu avertizări meteorologice oficiale. Presiunea singură nu poate confirma apariția furtunilor, precipitațiilor sau a fenomenelor severe.
+4. Contează foarte mult frecvența de eșantionare
+Ai menționat două posibilități: 0,5 secunde și 1,5 secunde.
+
+Ambele sunt mai mult decât suficiente.
+Parametru	0,5 secunde	1,5 secunde
+Măsurători/minut	120	40
+Măsurători/oră	7.200	2.400
+Măsurători/24h	172.800	57.600
+Măsurători/30 zile	5.184.000	1.728.000
+
+Pentru această aplicație, eu aș alege 1,5 secunde.
+
+Variațiile meteorologice ale presiunii sunt relativ lente. O frecvență mai mare nu aduce neapărat informație meteorologică suplimentară, dar poate ajuta la filtrarea zgomotului senzorului.
+
+Aș aplica:
+- Filtru median pentru eliminarea valorilor aberante.
+- Filtru trece-jos pentru reducerea zgomotului.
+- Calculul mediilor pe intervale de 1 minut.
+- Analiza tendințelor pe 30 minute, 1 oră, 3 ore și 6 ore.
+5. O posibilitate interesantă: algoritm adaptiv
+Aici putem merge mai departe decât simpla utilizare a unor praguri fixe.
+
+Algoritmul poate învăța comportamentul normal al presiunii în locația respectivă.
+
+De exemplu:
+- Înregistrează presiunea timp de 7-14 zile.
+- Construiește un profil al variațiilor obișnuite.
+- Identifică abaterile față de comportamentul normal.
+- Combină abaterea cu viteza și accelerația scăderii presiunii.
+- Generează o alertă numai când există suficiente indicii.
+
+
+
+6. Propuneri de implementare tehnica si extindere (Antigravity):
+A. Structura de date in memorie (Circular Ring Buffer in RAM):
+   - Buffer inelat pentru retinerea mediilor la fiecare 1 minut (istoric continuu pe ultimele 360 de minute = 6 ore).
+   - Ocupare de memorie: 360 puncte x 4 bytes = 1.44 KB, extrem de eficient si fara nicio uzura de Flash/NVS.
+   - Permite calculul instantaneu si fara efort de procesare al:
+     * deltaP_30m  = P(acum) - P(acum - 30 min)
+     * deltaP_1h   = P(acum) - P(acum - 60 min)
+     * deltaP_3h   = P(acum) - P(acum - 180 min)  [standard OMM/WMO]
+     * deltaP_6h   = P(acum) - P(acum - 360 min)
+     * V_P (viteza de variatie) = deltaP_3h / 3  [hPa/h]
+     * A_P (acceleratia / derivata a doua) = (deltaP_30m - deltaP_precedent) / dt
+
+B. Algoritmul de Clasificare a Nivelurilor de Risc (conform propunerii din FSD):
+   - Nivel 0 (Normal / Verde): deltaP_3h >= -1.0 hPa (presiune stabila sau in crestere).
+   - Nivel 1 (Atentie / Galben): -2.0 hPa <= deltaP_3h < -1.0 hPa (scadere moderata si sustinuta).
+   - Nivel 2 (Deteriorare / Portocaliu): -3.5 hPa <= deltaP_3h < -2.0 hPa sau (deltaP_1h < -1.2 hPa).
+   - Nivel 3 (Alerta Furtuna / Rosu): deltaP_3h < -3.5 hPa sau (deltaP_1h < -2.0 hPa) sau A_P puternic negativa.
+
+C. Integrare pe Afisajul LCD 480x320:
+   - Langa presiunea atmosferica se adauga simbolul de tendinta (sageata orientata pe baza V_P):
+     * UP (crestere sustinuta, >= +0.5 hPa/3h)
+     * FLAT (stabil, intre -0.5 si +0.5 hPa/3h)
+     * DOWN (scadere, <= -0.5 hPa/3h)
+   - O caseta / badge colorat in linia info sau in header cu nivelul curent:
+     [NORMAL] (verde), [ATENTIE] (galben), [DETERIORARE] (portocaliu), [ALERTA FURTUNA] (rosu clipitor).
+   - Daca Nivelul 3 este atins: optiune de semnal sonor scurt (beep pe codec ES8388 daca este activat).
+
+D. Integrare in Pagina Web AP/STA:
+   - Un card dedicat: "Monitorizare Barica si Prognoza":
+     * Afisare deltaP_30m, deltaP_1h, deltaP_3h, Viteza (hPa/h) si Acceleratie.
+     * Afisare status alerta colorata (Verde / Galben / Portocaliu / Rosu).
+     * Posibilitate de configurare praguri de sensibilitate alerta furtuna (ex: selectabil 2.5 / 3.0 / 4.0 hPa / 3h).
+     * Optiune de activare/dezactivare alerta sonora/vizuala.
+
+E. Algoritmul predictiv Zambretti (Optiune extinsa de prognoza locala):
+   - Folosind P_QNH, tendinta pe 3 ore si anotimpul (din data GPS/NTP), genereaza una din cele 26 prognoze clasice
+     (ex: "Vreme frumoasa stabila", "Innorare treptata", "Ploi iminente", "Furtuna severa").
+
+aș păstra:
+- Achiziție: 5 secunde.
+- Fereastră maximă principală de analiză: 6 ore.
+- Fereastră suplimentară de context: 24 ore.
+
+
+Propunerea mea (user) de exploatare a memoriei:
+Arhitectura pe care o recomand
+BMP280
+O măsurătoare la fiecare 1–3 minute
+Buffer RAM
+20–60 înregistrări temporare
+Memorie Flash – istoric
+Fișier cu înregistrări binare, înregistrări succesive
+Motor de analiză meteorologică
+Analiză 3h / 12h / 24h / 48h
+
+Pentru istoricul propriu-zis, aș prefera LittleFS sau FAT cu wear leveling, în funcție de framework-ul folosit. Aș păstra NVS pentru configurări, parametri și starea sistemului.
+
+O precizare tehnică: pentru presiune cu rezoluție de 0,01 hPa este necesar un câmp de minimum 32 de biți, nu 16 biți. 
+
+5. Recomandarea mea concretă
+aș configura:
+- Eșantionare: 3 minute .
+- Buffer RAM: 20 înregistrări.
+- Salvare în Flash: după completarea bufferului.
+- Timestamp: Unix, cu precizia necesară la minut.
+- Istoric păstrat: minimum 6 luni.
+- NVS: exclusiv pentru configurări și parametri.
+La trei minute, bufferul de 20 de înregistrări se completează într-o oră. Astfel, reduci frecvența operațiilor de scriere în Flash.
+
+Evalueaza si urmatoarea propunere de repartizare a memoriei flash:
+
+Destinație	Spațiu alocat
+Firmware	2 MB
+NVS – configurări	64 KB
+Sistem de fișiere – istoric meteo	8 MB
+OTA / firmware alternativ	4 MB
+Rezervă	Restul disponibil
+
+
+7. Implementare Arhitectura Weather Logger & Corelare cu Locatia (v0.0.3):
+   - Modul dedicat: weather_logger.h / weather_logger.cpp.
+   - Structura binara: WeatherRecord (20 octeti packed: timestamp uint32, pressure_pa uint32 la rezolutie 0.01 hPa, temp_c_x100 int16, altitude_m int16, maidenhead char[6], flags uint8, reserved uint8).
+   - Corelare geografica: Masuratorile sunt etichetate cu Maidenhead Grid Locator (6 caractere, ~3x2 km) sau 'INDOOR'.
+   - Filtrare pe locatie curenta: Calculele de tendinta barica (deltaP_30m, deltaP_1h, deltaP_3h, V_p, A_p) parcurg si evalueaza exclusiv esantioanele din aceeasi locatie.
+   - Detectare schimbare locatie: La deplasarea intr-o locatie noua, sistemul semnalizeaza starea [LOCATIE NOUA] si acumuleaza date locale, prevenind alarmele false cauzate de diferentele naturale de altitudine.
+   - Memorie & Wear-leveling:
+     * Buffer temporar RAM de 20 inregistrari: la esantionare de 3 min, scrierea in LittleFS se face o data pe ora (24 scrieri/zi).
+     * Buffer circular RAM de 480 inregistrari (24h la 3 min): 9.6 KB RAM pentru analiza instantanee fara uzura Flash.
+     * Fisier Flash LittleFS: /weather.dat pe partitia de 8 MB (capacitate > 2 ani de date continue).
+   - Afisaj LCD integrat:
+     * Separator dedicat la Y = 222 (deasupra Presiune & Temperatura).
+     * Spatiu alocat Y: 160..220: Iconita vectoriala meteo (Soare, Nor, Ploaie, Furtuna, Busola/Pin) + Sageata tendinta (^, ->, v) + Badge risc ([STABIL], [ATENTIE], [DETERIORARE], [ALERTA FURTUNA], [LOCATIE NOUA]) + Detalii metrice (dP3h, V_p, LOC).
+   - Card dedicat in Pagina Web AP/STA: Afisare metrice complete, nivel de risc colorat, numar de esantioane pe locatia curenta si statistici LittleFS.
+
+8. Arhitectura Grafic Barometric Rolling Strip Chart & Axa de Timp Statica (v0.0.4):
+   - Tip grafic: Rolling Strip Chart (derulare continua lina spre stanga, stil barograf profesional).
+   - Referinta temporala: Marginea dreapta (X = 478) este fix '0h'/'0m' (ACUM). Spre stanga timpul curge in trecut.
+   - Axa de timp 100% statica: Nu se mai redeseneaza niciodata la fiecare pixel! Se calculeaza o singura data la boot sau la schimbarea intervalului din pagina web (ZERO flicker).
+   - Derulare lina diferentiala: Se muta punctele prin bufferul RAM baroPlotY[480]; se sterg strict pixelii vechi cu BARO_BOX_FILL si se scriu cei noi cu BARO_DOT_COLOR; caseta nu este stearsa niciodata pe parcurs.
+   - Durata maxima afisata: Corelata cu intervalul de esantionare (478 pixeli * 7 * baro_sec); la 1.5s = ~1.4 ore; indicata la marginea din stanga (ex: [-1.4h]).
+   - Personalizare completa in setup.h:
+     * Culori axa de timp: TIME_AXIS_LINE_COLOR, TIME_AXIS_TICK_COLOR, TIME_AXIS_TEXT_COLOR, TIME_AXIS_NOW_COLOR.
+     * Texte stare prognoza: WEATHER_TXT_NORMAL, WEATHER_TXT_CAUTION, WEATHER_TXT_DETERIORATE, WEATHER_TXT_STORM, WEATHER_TXT_NEW_LOC, WEATHER_TXT_INIT.
+     * Culori stare prognoza: WEATHER_COLOR_NORMAL, WEATHER_COLOR_CAUTION, WEATHER_COLOR_DETERIORATE, WEATHER_COLOR_STORM, WEATHER_COLOR_NEW_LOC.
+     * Culori sageti si iconite: WEATHER_COLOR_TREND_UP, WEATHER_COLOR_TREND_FLAT, WEATHER_COLOR_TREND_DOWN, WEATHER_COLOR_SUN, WEATHER_COLOR_CLOUD, WEATHER_COLOR_RAIN.
+
+9. Rafinamente UI Header si Prognoza (v0.0.5):
+   - Header: Afisare numar sateliti GNSS receptionati direct in stanga iconitei de satelit (X = 415..439), cu spatiu de 6 pixeli fata de iconita (fara eticheta text). Numarul este alb cand fix-ul este valid, rosu in lipsa fix-ului.
+   - Prognoza: Eliminare detalii metrice secundare de pe ecran; pastrare exclusiva a iconitei meteo vectoriale, a sagetii de tendinta si a badge-ului sintetic ([STABIL], [ATENTIE], etc.), centrate vertical intre separatoarele Y=156 si Y=222.
+
+10. Introducere Manuala a Locatorului Maidenhead (v0.0.6):
+   - In pagina web se poate introduce/modifica oricand un locator Maidenhead manual (ex: KN34bk), stocat persistent in Preferences.
+   - Cand nu exista GPS conectat sau nu exista fix satelitar, locatorul manual este folosit pe ecran (linia LOC:) si in modulul meteo pentru corelarea barica a prognozei.
+   - Daca modulul GPS livreaza date valide cu fix, acesta rescrie automat locatorul activ cu cel calculat din coordonatele GNSS.
+
+####################### FINAL DE SECTIUNE PROGNOZA METEO ###################################
+############################################################################################
+
+Folosesc Hardware ESP32 Agent Dev Kit.
+Am conectat un modul BME280 pe I2C: SCL la IO38, SDA la IO48.
+Optional, se va putea conecta un GPS pentru a prelua ora si data din informatia relevanta GNSS.
+UART utilizat: GPIO20=Rx data. GPIO19 este TX dar acesta nu va fi utilizat cu GPS.
+Voi folosi orientarea de ecran in Landscape.
+
+Doresc afisarea unui ceas sincronizat cu NTP.
+Formatul orei: HH:MM:SS, 24h.
+Codul va fi realizat cu functii separate, in fisiere cpp/h.
+
+
+Secventa de boot:
+-Verifica daca exista un GPS prin verificarea primirii de date pe portul UART Rx. Daca timp de 5 secunde nu se primesc date, va trece mai departe.
+-Verifica daca in preferences exista salvate datele de login pentru WiFi. Se vor putea memora/preseta, datele de login pentru 3 retele WiFi. Daca exista, se va conecta in mod STA la prima dintre ele.
+-Daca nu gaseste retea, porneste in mod AP.
+
+Atat in mod AP cat si in mod STA, vom avea optiunea de  reseta datele de login la retelele WiFi, fiecare in mod distinct.
+Vom avea setare pentru diferenta UTC - Local time/date. Data locala sa fie corect sincronizata cu cea UTC!
+In pagina web se vor afisa datele Lat Lon receptionate de GPS si maidenhead locator cu precizia maxima posibila.
+In pagina web se va afisa bifa pentru rotirea ecranului la 180 grade.
+In pagina web va exista setare pentru calibrarea barometrului cu altul etalonat; calibrarea se face prin introducerea intr-un viewport etichetat "QNH:" a valorii indicate de celalalt barometru. Valoarea se salveaza persistent.
+
+Afisajul LCD, touch, senzori.
+
+Afisarea va fi in mod landscape, cu posibilitatea setarii rotirii de 180 grade din setup.h .
+Fundalul va fi negru.
+Ecranul va fi impartit pe orizontala si vom avea afisate, enumerate de sus in jos:
+-Un header in care afisam simbolul unui satelit care e rosu cand nu avem GPS detectat si Verde blink cand avem GPS detectat; rata de blink sa fie derivata din datele sosite pe UART; reteaua wifi la care e conectat, denumirea prescurtata, doar primele 5 caractere; IP-ul atribuit.
+-in partea de sus, cu caractere mari, culoare bleu, setabila in setup.h ora locala; cu eticheta "LT";
+-dedesubt, cu caractere similare, culoare verde intens, setabila in setup.h ora UTC; cu eticheta "UTC".
+-dedesubt, maidenhead locator, cu caractere mai mici, urmata de presiunea masurata in mb si temperatura in Celsius sau Farenheit, setabil din pagina web si setup.h.
+-in partea cea mai de jos a ecranului, pe intreaga orizontala a ecranului, vom desena un dreptunghi, de cca 75 px inaltime, cu chenar alb si umplere bleu deschis; in acest chenar, de la stanga la dreapta, vom printa cate un punct de culoare alba (toate aceste culori sa fie definibile in setup.h, eu indic valorile default in acest FSD). pozitia pe inaltime, pe axa Y a punctului vreau sa fie determinata de valoarea presiunii. Intervalul la care se face masuratoarea in vedrea afisarii va fi definibil in setup.h si pe pagina web AP / STA. Scopul este de a avea in timp un grafic care indica variatia presiunii atmosferice masurata cu BME280. Atentie la situatiile in care valoarea masurata genereaza o pozitie Y care depaseste limitele borderului! La finalul FSD este un cod care are rezolvata problema acestei depasiri, vreau sa preiei de acolo metoda de afisare.
+
+Pagina AP/STA
+As vrea sa fie separata, ca webpage.cpp/h
+
+Q&A:
+1a. Cand GPS si WiFi sunt disponibile, prioritate are GPS.
+1b. In sectiunea "Afisajul LCD, touch, senzori." este descris ce afisam pe LCD. Ambele ore vor fi afisate. Data UTC si data locala, dupa fiecare ora. Data cu caractere mai mici.
+2. Retele se incearca automat, in ordinea 1, 2, 3. La prima gasita se incearca login. Daca login e reusit, ramane acolo. Daca nu, trece mai departe. Daca a epuizat lista fara login, intra in AP mode.. SSID pentru AP este "BaroClock", retea deschisa.
+3. 9600. In lipsa afisam -----. Precizia locatorului este de 6 caractere.
+4. Vreau sa mentinem principiul si sa selectam din setup.h sensibilitatea. Daca e posibil, adaugam si in pagina web AP/STA.
+5. Deocamdata nu am nimic pentru touch, va fi pe viitor.
+6. Folosim implementarea directa, nativa.
+7. GPIO46 vreau sa fie pullup si prin punerea la GND la boot, sa reseteze datele de acces la WIFI; se va pastra secventa de verificare si va porni in AP.
+8. Implementare specifica realizata in cod:
+   - Driver nativ paralel 8-bit ST7796 / 8080 condus direct cu AW9523 pentru backlight si reset pe I2C intern (SDA=5, SCL=4).
+   - Autodetectie hardware BMP280 / BME280: citire Chip ID la 0xD0 (0x60 = BME280, 0x58 = BMP280 prin compensare directa Bosch 64-bit pentru presiune si temperatura).
+   - GPS autodetectie viteza UART la boot (9600..115200) pe GPIO20 Rx.
+   - Refresh LCD diferential: actualizare exclusiv la elementele care isi schimba starea/valoarea (fara flicker).
+   - Grafic barometric centrat: prima citire se ancoreaza la mijlocul inaltimii casetei (midY = boxY + 75/2), iar variatiile oscileaza in sus/jos fata de acest nivel.
+   - Pagina Web AP/STA: include bifa DST (+1h) si aplicarea imediata in timp real a calibrarii QNH si intervalului de esantionare.
+9. Istoric Baric si Prognoza Meteo Sintetica (LittleFS):
+   - Inregistrare automata a esantioanelor de presiune asociate cu Maidenhead Locator curent.
+   - Analiza ferestrelor de timp (30 min, 1h, 3h), calculul vitezei de variatie (rate of change hPa/h) si a acceleratiei (derivata a doua).
+   - Clasificare inteligenta de risc baric: [STABIL] (verde), [ATENTIE] (galben), [DETERIORARE METEO] (portocaliu), [ALERTA FURTUNA] (rosu intens), [LOCATIE NOUA] (cyan cand sunt sub 4 esantioane locale).
+10. Grafic Barometric Rolling Strip Chart cu Axa Statica de Timp:
+   - Axa orizontala de timp este statica, ancorata permanent in prezent (0h / 0m) la marginea dreapta a ecranului (X = 478).
+   - Reperele din trecut (-1h, -2h, etc.) sunt desenate spre stanga, fara redimensionari sau flicker la sosirea de noi puncte.
+   - Graficul ruleaza orizontal spre stanga pixel cu pixel (rolling strip chart).
+11. Functionalitati Noi, Calibrare Senzori si Layout LCD:
+   - Header: Afisare numar sateliti receptionati in stanga antenei parabolice (spatiu 6-8px, alb cand exista fix, rosu cand cauta fix).
+   - Locator manual: Posibilitate de introducere manuala oricand din pagina web; rescris automat daca GPS-ul livreaza date valide.
+   - Calibrare temperatura: Camp de calibrare etalon in pagina web ("Calibrare Temperatura:") pentru compensarea incalzirii interne din carcasa (offset aplicat atat pe Celsius, cat si pe Fahrenheit).
+   - Selectie unitate de masura presiune: Optiune in interfata web (dropdown) intre "mb", "hPa" si "mmHg" (1 mb = 1 hPa, 1 mmHg = 0.750062 hPa).
+   - Layout LCD optimizat:
+     * Eliminarea etichetelor text redundante "P:" si "T:" de pe ecran.
+     * Caseta mare pentru iconite pe partea stanga a ecranului (X: 6..82, Y: 162..248, 76x86 px) acoperind atat inaltimea liniei de prognoza, cat si pe cea a valorilor de presiune/temperatura.
+     * Iconite meteo vectoriale de inalta rezolutie desenate in aceasta caseta (Soare cu 8 raze, Soare+Nor, Nor mare dens, Ploaie cu 5 dungi diagonale cyan, Furtuna cu fulger galben in 3 trepte zig-zag, Tinta GPS radar pentru locatie noua).
+     * Separator partial la Y = 208 intre X = 88 si X = 479 (separa prognoza de senzori fara a taia caseta din stanga).
+     * Deplasarea spre dreapta (X >= 88) a sagetii de tendinta (X = 92, Y = 172) si a textului de stare a vremii (X = 118, Y = 176, scara 3).
+     * Afisarea valorilor curate de presiune si temperatura la X = 92, Y = 222 (scara 3), conform unitatilor alese (ex: "1013.2 hPa   22.5 C" sau "759.9 mmHg   22.5 C").
+
+
+
+
+
+
+Cod dintr-o versiune anterioara simpla ce contine solutia corecta de afisare pentru graficul presiunii.
+/*
+   UTC/Baro GPS Clock
+    Release V5.1
+    Copyright Dec. 2023 - Adrian, YO3HJV
+    https://yo3hjv.blogspot.com
+    *******************************************************************
+      Required parts:
+      -NodeMCU
+      -uBlox Neo-6 GPS unit
+      -BME280 I2C Baro-Temp module
+      -SPI TFT ST7735 128x160      1.28" or whatever
+      -300 - 470KOhm resistor (something in this range). 
+      The ratio of the voltage divider will be calculated and included in the code.
+          
+      !!!!!!!!!!!!!!!!!!!!!!** WARNING **!!!!!!!!!!!!!!!!!!!!!!
+       All Vcc from GPS, TFT, BME goes to 3V pin on the NodeMCU
+       DO NOT CONNECT TO THE BATTERY UNDER NO CIRCUMSTANCES !!!
+      *********************************************************
+          Connections, relative to NodeMCU pins numbering:
+          TFT         NodeMCU pin#
+          ________________________
+          CS            D8
+          D/C           D4
+          DIN           D7
+          CLK           D5
+          RST           RST
+          BL            3V
+              
+          GPS         NodeMCU pin#
+          ________________________
+          Tx            D2
+          Rx            D6
+          GND           GNC
+          Vcc           3V          
+
+          BME280    
+          ________________________
+          I2C SDA       D1
+          I2C SCL       D3
+          GND           GND 
+          Vcc           3V          
+      ***************************************************
+      V_5.1  Dec, 13, 2023 - RELEASE
+      -Small bug on TFT Altitude print alignement solved
+      
+      V_5.0  Dec.9, 2023  - RELEASE
+      -SmartDelay added to complete feed GPS object
+      -Altitude bug solved
+      -Some optimisation around memory usage
+      --- No other bugs found
+      
+      
+      V_4.5  Dec.8, 2023
+      -Splash screen added
+      -Code optimisation
+      -Barograph bug solved
+      -mashed text bug solved
+      -altitude bug solved partially
+            
+*/
+
+const float version = 5.1;              // Version
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
+
+#include <maidenhead.h>
+#include <Wire.h>             
+#include <Adafruit_GFX.h>     
+#include <Adafruit_BME280.h>  
+
+// Include application, user and local libraries
+#include "SPI.h"
+#include "TFT_22_ILI9225.h"
+
+// TFT
+
+#define TFT_RST 26  // IO 26
+#define TFT_RS  25  // IO 25
+#define TFT_CLK 14  // HSPI-SCK
+//#define TFT_SDO 12  // HSPI-MISO
+#define TFT_SDI 13  // HSPI-MOSI
+#define TFT_CS  15  // HSPI-SS0
+#define TFT_LED 0   // 0 if wired to +5V directly
+SPIClass hspi(HSPI);
+#define TFT_BRIGHTNESS 200 // Initial brightness of TFT backlight (optional)
+
+// Use hardware SPI (faster - on Uno: 13-SCK, 12-MISO, 11-MOSI)
+TFT_22_ILI9225 tft = TFT_22_ILI9225(TFT_RST, TFT_RS, TFT_CS, TFT_LED, TFT_BRIGHTNESS);
+// Use software SPI (slower)
+//TFT_22_ILI9225 tft = TFT_22_ILI9225(TFT_RST, TFT_RS, TFT_CS, TFT_SDI, TFT_CLK, TFT_LED, TFT_BRIGHTNESS);
+
+
+// BME280 address: 0x76 or 0x77 (0x77 is library default address)
+#define BME280_I2C_ADDRESS 0x76
+Adafruit_BME280 bme; 
+
+//GPS
+TinyGPSPlus gps;                       
+TinyGPSCustom pdop(gps, "GPGSA", 15);  
+SoftwareSerial SerialGPS(D2, D0);
+
+float NO_OF_SAT = 0;
+float ACT_HDOP = 0;
+
+float Latitude, Longitude;
+double Altitude;
+int year, month, date, hour, minute, second;
+
+
+String DateString, TimeString, LatitudeString, LongitudeString, SatString, HdopString, MaidString, PresString, AltString;
+
+
+// COLORS
+    int BLACK = 0;
+    int WHITE = 65535;
+    int RED = 63488;
+    int ORANGE = 64096;
+    int YELLOW = 65504;  // OK
+    int GREEN = 2016;
+    int CYAN = 2047;     // 
+    int AQUA = 1279;
+    int BLUE =  31;
+    int MAGENTA = 63519;
+    int PINK = 63743;
+
+// CHOOSE PREFERED COLORS FOR TFT ELEMENTS
+    int BackGroundColor = BLACK;
+    int SplashBackGroundColor = BLACK;
+    int HLinesColor = MAGENTA;               
+    int BoxColor = RED;
+    int DotColor = WHITE;
+    int BoxFillColor = BLUE;
+    int DotGraphColor = WHITE;                      
+    int VLinesColor = WHITE;
+    int FixedTextColor = WHITE; 
+    int CoordColor = YELLOW; 
+    int STextColor =  WHITE;
+    int BTextColor = YELLOW;
+    int QNHtextColor = RED;
+    int DATEtextColor = YELLOW;
+    int CelsiusColor = WHITE;  
+   
+           
+
+unsigned long previous_BME_Millis = 0;
+unsigned long current_BME_Millis = 0;
+const long interval_TFTbme = 500;    // Pressure polling interval
+unsigned long previous_BATT_Millis = 0;
+unsigned long current_BATT_Millis = 0;
+const long interval_BATT = 300;      // Battery voltage polling interval
+
+// Barometer graphic area
+  const int graphWidth = 128;
+  const int graphHeight = 20;    
+  int xPos = 1;         
+  int yPos = 123;
+  float pres = 0;
+  float temp = 0;
+
+int i = 0;
+int hdop = 9;
+
+// Battery things
+    const float V_divider_ratio = 5.500;  // Replace with your value calculated from real values
+                                          // then fine tune the value with DEBUG_BATT function
+    float Vbat = 0;
+    const int vReadings = 4;              // Number of readings to average voltage. Do not touch!
+    float voltageReadings[vReadings] = {4}; 
+    int readIndex = 0;
+    int j = 0;
+
+// Uncomment LINE for specific debugging on Serial
+    // I strongly reccomend to use one at a time and not all of them    
+
+    //#define DEBUG 1                      // Uncomment to start serial scaffold debugging
+    #define DEBUG_GPS 1                  // GPS Library tools for debug
+    #define DEBUG_ALT 1
+    //#define DEBUG_HDOP 1 
+    //#define DEBUG_SAT 1  
+    //#define DEBUG_CHECK_GPS 1                    
+    //#define DEBUG_TFT_BME 1              // Pressure and Temperature value
+    //#define DEBUG_TFT_BAROGRAPH 1        // Pressure graphic math  
+    //#define DEBUG_BATT 1                 // Battery readings
+    //#define DEBUG_XPOS 1
+    //#define DEBUG_YPOS 1
+    
+// Uncomment one of those for Barograph sensitivity
+    #define HIGH_SENS 1
+    //#define LOW_SENS 1 
+   
+// DON'T Touch this! 
+    unsigned long previous_BARO_Millis = 0;
+    unsigned long current_BARO_Millis = 0;
+    const long interval_BARO = 1500;        // msec between readings for Barograph. Do not touch!
+    const int numPresReadings = 7;          // Number of readings to average. Do not touch!    
+    float pressures[numPresReadings];
+    int currentReadingIndex = 0;
+    float sumPressures = 0;
+    int extractedValue = 50;  
+    const int showStatic = 2000;            // How long the splash screen is shown. You can change this.
+
+
+void setup() {
+    hspi.begin();
+    tft.begin(hspi);
+   
+      tft.setBackgroundColor(BackGroundColor);
+      splashScreen();  
+      Wire.begin(D1, D3);             
+      Serial.begin(115200);
+      SerialGPS.begin(9600); 
+        bool status;
+        status = bme.begin(0x76);
+        if (!status) {
+          Serial.println("BME280 Error! Check wiring first");
+          while (1)
+            ;
+      }
+      delay(showStatic);
+      Serial.println(F("Now drawing static things..."));
+      TFT_static(); 
+      Serial.println(F("Starting loop..."));
+      Serial.println(F("no more BS on Serial :-)"));
+}
+
+void loop() {          
+        TFT_Baro_Graph();    
+        current_BATT_Millis = millis();        
+        if (current_BATT_Millis - previous_BATT_Millis >= interval_BATT) {
+                previous_BATT_Millis = current_BATT_Millis;
+                TFT_batt();
+                j=++j;                                                     
+            }
+        current_BME_Millis = millis();                
+        if (current_BME_Millis - previous_BME_Millis >= interval_TFTbme) {
+                previous_BME_Millis = current_BME_Millis;
+                TFT_BME();
+        }  
+        smartDelay(1000); // To feed GPS object                             
+                          #ifdef DEBUG_GPS
+                              Serial.print("Chars Processed= ");
+                              Serial.println(gps.charsProcessed());
+                              Serial.print("Sentences that passed checksum= ");
+                              Serial.println(gps.passedChecksum());
+                              Serial.print("Sentences that failed checksum= ");
+                              Serial.println(gps.failedChecksum());
+                              Serial.print("Soft Serial device overflowed? ");
+                              Serial.println(SerialGPS.overflow() ? "YES!" : "No");
+                              Serial.print("Sentences with Fix: ");
+                              Serial.println(gps.sentencesWithFix() );                            
+                              Serial.println();
+                              Serial.print(F("ALTITUDE   Fix Age= "));
+                              Serial.print(gps.altitude.age());
+                              Serial.print(F("ms Raw= "));
+                              Serial.print(gps.altitude.value());
+                              Serial.println(F(" Meters="));
+                          #endif                                                 
+}
+
+static void smartDelay(unsigned long ms) {
+                  unsigned long start = millis();
+                  do {
+                      while (SerialGPS.available()){
+                          gps.encode(SerialGPS.read()); 
+                                                                          
+                  } 
+                  Check_GPS();}
+                  while (millis() - start < ms);
+} 
+
+void Check_GPS(){  
+                if (gps.location.isUpdated()) {
+                      Latitude = gps.location.lat();
+                      LatitudeString = String(Latitude, 6); 
+                      Longitude = gps.location.lng();
+                      LongitudeString = String(Longitude, 6); 
+                    TFT_LatLon();
+                    TFT_Maidenhead();        
+                    }
+
+                if (gps.date.isUpdated()) {
+                      DateString = "";
+                      date = gps.date.day();
+                      month = gps.date.month();
+                      year = gps.date.year();
+                    if (date < 10)
+                        DateString = '0';
+                        DateString += String(date);
+                        DateString += "/";
+                    if (month < 10)
+                        DateString += '0';
+                        DateString += String(month);
+                        DateString += "/";
+                    if (year < 10)
+                        DateString += '0';
+                        DateString += String(year);
+                    TFT_Date();      
+                    }
+
+                if (gps.time.isUpdated()) {
+                      TimeString = "";
+                      hour = gps.time.hour();  //adjust UTC by adding "+3"
+                      minute = gps.time.minute();
+                      second = gps.time.second();
+                    if (hour < 10)
+                        TimeString = '0';
+                      TimeString += String(hour);
+                      TimeString += ":";
+                    if (minute < 10)
+                        TimeString += '0';
+                      TimeString += String(minute);
+                      TimeString += ":";
+                    if (second < 10)
+                        TimeString += '0';
+                      TimeString += String(second);
+                    TFT_Time();
+                    }
+                
+                if (gps.altitude.isUpdated()) {                           
+                    Altitude = gps.altitude.meters();  
+                          #ifdef DEBUG_ALT
+                          Serial.print(F("alt .isUpdated"));
+                          #endif
+                    TFT_Alt();                         
+                         } 
+                if (gps.satellites.isValid() ) {
+                      NO_OF_SAT = gps.satellites.value();
+                      #ifdef DEBUG_SAT
+                      Serial.println();
+                      Serial.println(F("sat .isValid"));
+                      #endif                      
+                      TFT_Sat();
+                      }
+                if (gps.hdop.isValid()  ){
+                      ACT_HDOP = gps.hdop.hdop();
+                      #ifdef DEBUG_HDOP
+                      Serial.println();
+                      Serial.println(F("HDOP updated passed"));
+                      #endif
+                      TFT_Hdop();                      
+                      }    
+                else;                
+                          #ifdef DEBUG_CHECK_GPS
+                          Serial.println(F("CheckGPS - passed"));
+                          #endif
+}
+
+void TFT_Alt(){         
+                    #ifdef DEBUG_ALT
+                    Serial.println();
+                    Serial.println(F("TFT_Alt"));
+                    #endif                
+            AltString = "";
+            AltString = String(int(Altitude));
+                if (Altitude >= 0 && Altitude < 10 )
+					          AltString = AltString += "    "; // 4 spatii
+			          if (Altitude >=10 && Altitude <100)
+					          AltString = AltString += "   ";  // 3 spatii
+			          if (Altitude >=100 && Altitude < 1000)
+					          AltString = AltString += "  ";   // 2 spatii
+			          if (Altitude >=1000 && Altitude <10000)
+					          AltString = AltString += " ";    // 1 spatiu
+                else;
+                    #ifdef DEBUG_ALT
+                    Serial.println(F("AltString=Altitude"));
+                    Serial.println(AltString);
+                    #endif
+                // GPS a.s.l.
+                tft.setTextColor(BTextColor, BackGroundColor);
+                tft.setTextSize(2);
+                tft.setCursor(50, 71);
+                tft.setTextWrap(false);          
+            if(gps.altitude.isValid()) {       
+                tft.print(AltString); 
+                    #ifdef DEBUG_ALT
+                    Serial.print(F("AltString: "));
+                    Serial.println(AltString);
+                    #endif
+              }        
+             else
+                tft.print(" -");
+                    #ifdef DEBUG_ALT
+                    Serial.println();
+                    Serial.println(F("Altitude NOT valid"));                        
+                    #endif       
+}
+
+void TFT_Hdop() {
+                      #ifdef DEBUG_HDOP
+                      Serial.print(F("ACT_HDOP: "));
+                      Serial.print(ACT_HDOP);
+                      #endif
+                HdopString = "";
+                hdop = map(ACT_HDOP, 1, 100, 1, 9);
+                HdopString = String(hdop);
+				        tft.setTextColor(STextColor, BackGroundColor);
+                      tft.setTextSize(1);
+                      tft.setCursor(6, 151);
+                      tft.setTextWrap(false);
+                      tft.print(HdopString);
+                      
+                      #ifdef DEBUG_HDOP
+                        Serial.print(F("   HdopString: "));
+                        Serial.println(HdopString);
+                      #endif
+}
+
+void TFT_Sat() {                 
+                SatString = "";
+                SatString = String(int(NO_OF_SAT));                
+                tft.setTextColor(STextColor, BackGroundColor);
+                      tft.setTextSize(1);
+                      tft.setCursor(112, 10);
+                      tft.setTextWrap(false);
+                      tft.print(SatString); 
+                      #ifdef DEBUG_SAT
+                        Serial.print(F("SatString: "));
+                        Serial.println(SatString);
+                      #endif                  
+}
+
+void TFT_Maidenhead() {  
+          char* locator6 = get_mh(Latitude, Longitude, 6);  
+          MaidString = String(locator6);
+              tft.setTextColor(BTextColor, BackGroundColor);
+              tft.setTextSize(2);
+              tft.setCursor(42, 48);
+              tft.setTextWrap(false);
+              tft.print(MaidString);
+                    #ifdef DEBUG
+                    Serial.print("Loc QTH 6 char locator is ");
+                    Serial.println(MaidString);  
+                    #endif
+}
+
+void TFT_Time(){
+      tft.setTextColor(BTextColor ,BackGroundColor);
+      tft.setTextSize(2);
+      tft.setCursor(32, 25);
+      tft.setTextWrap(false);
+      tft.print(TimeString);            
+                    #ifdef DEBUG
+                    Serial.print("Time: ");
+                    Serial.println(TimeString);  
+                    #endif                       
+}
+
+void TFT_Date(){     
+      tft.setTextColor(DATEtextColor ,BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(67, 95);
+      tft.setTextWrap(false);
+      tft.print(DateString);
+                    #ifdef DEBUG
+                    Serial.print("Date: ");
+                    Serial.println(DateString); 
+                    #endif
+}
+
+void TFT_LatLon() {
+      tft.setTextColor(CoordColor ,BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(27, 0);
+      tft.setTextWrap(false);
+      tft.print(LatitudeString);
+
+      tft.setTextColor(CoordColor ,BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(27, 10);
+      tft.setTextWrap(false);
+      tft.print(LongitudeString);
+                    #ifdef DEBUG
+                    Serial.print("Lat: ");
+                    Serial.println(LatitudeString);  // 
+                    Serial.print("Lon: ");
+                    Serial.println(LongitudeString);  // 
+                    #endif
+}
+
+void TFT_BME() {  // Just show Pres and Temp on TFT
+          temp = bme.readTemperature(); 
+          pres = bme.readPressure();
+              tft.setTextColor(STextColor, BackGroundColor);
+              tft.setTextSize(1);
+              tft.setCursor(73, 151);
+              tft.setTextWrap(false);
+          if (temp < 0)      
+              tft.printf("-%02u", (int)abs(temp));
+          else
+              tft.printf(" %02u", (int)temp);                   
+              tft.setTextColor(STextColor, BackGroundColor);
+              tft.setTextSize(1);
+              tft.setCursor(29, 151);
+              tft.setTextWrap(false);
+          if (pres < 1000) {
+              tft.printf("%3u.%01u", (int)(pres / 100), (int)((uint32_t)pres % 100) / 10);
+          } else {
+              tft.printf("%4u.%01u", (int)(pres / 100), (int)((uint32_t)pres % 100) / 10);
+          } 
+                    #ifdef DEBUG_TFT_BME
+                      Serial.println("TFT_BME()");
+                      Serial.print("Pressure: ")
+                      Serial.println(pres);
+                      Serial.print("Temperature: ")
+                      Serial.println(temp);
+                      Serial.println();
+                    #endif      
+}
+
+void TFT_Baro_Graph () {
+                unsigned long current_BARO_Millis = millis();
+              if (current_BARO_Millis - previous_BARO_Millis >= interval_BARO) {
+                        previous_BARO_Millis = current_BARO_Millis;
+                        float pres = bme.readPressure();
+                        pressures[currentReadingIndex] = pres;
+                        sumPressures += pres;
+                        currentReadingIndex = (currentReadingIndex + 1) % numPresReadings;                
+                        if (currentReadingIndex == 0) {
+                          float averagePressure = sumPressures / numPresReadings;               
+                              #ifdef DEBUG_TFT_BAROGRAPH
+                                    Serial.println();
+                                    Serial.print("Average Pressure: ");
+                                    Serial.println(averagePressure, 2 );
+                                  #endif 
+                                  // Convert averagePressure to a string
+                        char buffer[15];  // Adjust the buffer size based on the expected length
+                        snprintf(buffer, sizeof(buffer), "%.2f", averagePressure);
+                        int length = strlen(buffer);
+                              #ifdef DEBUG_TFT_BAROGRAPH
+                              Serial.print("String buffer:");
+                              Serial.println(buffer);
+                              #endif
+                      // Extract the 5th and 6th digits from the right, counting from the decimal point
+                        #ifdef LOW_SENS                  
+                        int digit5 = (length >= 5) ? (buffer[length - 5] - '0') : 0;
+                        int digit6 = (length >= 6) ? (buffer[length - 6] - '0') : 0;
+                        // Combine them into a single value
+                        extractedValue = digit6 * 10 + digit5;
+                        #endif
+                      // Extract the 4th and 5th digits from the right, counting from the decimal point                
+                        #ifdef HIGH_SENS
+                        int digit4 = (length >= 4) ? (buffer[length - 4] - '0') : 0;
+                        int digit5 = (length >= 5) ? (buffer[length - 5] - '0') : 0;
+                        // Combine them into a single value
+                        extractedValue = digit5 * 10 + digit4;
+                        #endif
+                              #ifdef DEBUG_TFT_BAROGRAPH
+                                    Serial.print("Extracted Value: ");
+                                    Serial.println(extractedValue);
+                              #endif              
+                // Reset the buffer
+                buffer[0] = '\0';
+                drawPixel();                
+                currentReadingIndex = 0;
+                sumPressures = 0;
+    }
+  }   
+}
+
+void drawPixel(){
+                  xPos += 1; 
+                  if(xPos >126){
+                    tft.fillRect(1, 114, 127, 20, BoxFillColor);
+                    tft.drawRect(0, 113, 128, 21, BoxColor);
+                    xPos = 1;                    
+                      }   
+                  //In the QNH Box: 132 is the lowest pixel line while 115 is the highes pixel line
+                  // the limit is 114               
+                  yPos = map ( extractedValue, 0, 99, 132, 114);      
+                  tft.drawPixel(xPos, yPos, DotGraphColor);
+                          #ifdef DEBUG_YPOS
+                          Serial.print("yPos: ");
+                          Serial.println(yPos);
+                          #endif                  
+                          #ifdef DEBUG_XPOS
+                          Serial.print("xPos= ");
+                          Serial.println(xPos);
+                          #endif   
+}
+
+void TFT_batt() {
+            int adc = analogRead(A0);
+                      #ifdef DEBUG_BATT
+                      Serial.print("analogRead: ");
+                      Serial.println(adc);
+                      #endif  
+            float referenceVoltage = 1.0;                               // ADC reference voltage ESP8266
+            float voltage = adc * (referenceVoltage / 1023.0) * V_divider_ratio;  // 5.500 is ADC resistive voltage divider ratio
+            voltageReadings[readIndex] = voltage;
+            readIndex = (readIndex + 1) % vReadings;
+            float sumVoltages = 0;
+            for (int j = 0; j < vReadings; ++j) {
+                  sumVoltages += voltageReadings[i];                                               
+                            #ifdef DEBUG_BATT
+                            Serial.print("j= ");
+                            Serial.println(j);
+                            #endif
+                  }
+            float averageVoltage = sumVoltages / vReadings;
+                    tft.setTextColor(STextColor, BackGroundColor);
+                    tft.setTextSize(1);
+                    tft.setCursor(97, 151);
+                    tft.setTextWrap(false);
+                    tft.printf(" %0.1f", averageVoltage);
+                            #ifdef DEBUG_BATT
+                            Serial.print("Average Voltage: ");
+                            Serial.println(averageVoltage);
+                            #endif                  
+}
+
+void TFT_static() {  
+      tft.fillScreen(BackGroundColor);    
+      tft.drawLine(0, 20, 127, 20, HLinesColor);       // Orizontala de sub Lat/Lon - prima de sus
+      tft.drawLine(0, 43, 127, 43, HLinesColor);       // Orizontala de sub UTC - a doua de sus
+      tft.drawLine(0, 66, 127, 66, HLinesColor);       // Orizontala de sub QTH Locator - a treia de sus
+      tft.drawLine(0, 89, 127, 89, HLinesColor);     // Orizontala de sub GPSasl - a patra de sus
+      tft.drawLine(0, 137, 127, 137, HLinesColor);       // Orizontala de sub graficul QNH - ultima de jos, sub Box
+      
+      tft.fillRect(1, 114, 127, 20, BoxFillColor);    // Box pentru grafic QNH
+      tft.drawRect(0, 113, 128, 21, BoxColor);         
+      
+    // Box ticks
+        tft.drawPixel(0, 111, DotColor);               
+        tft.drawPixel(7, 111, DotColor);
+        tft.drawPixel(15, 111, DotColor);
+        tft.drawPixel(23, 111, DotColor);
+        tft.drawPixel(31, 111, DotColor);
+        tft.drawPixel(39, 111, DotColor);
+        tft.drawPixel(47, 111, DotColor);
+        tft.drawPixel(55, 111, DotColor);
+        tft.drawPixel(63, 111, DotColor);
+        tft.drawPixel(71, 111, DotColor);
+        tft.drawPixel(79, 111, DotColor);
+        tft.drawPixel(87, 111, DotColor);
+        tft.drawPixel(95, 111, DotColor);
+        tft.drawPixel(103, 111, DotColor);
+        tft.drawPixel(111, 111, DotColor);
+        tft.drawPixel(119, 111, DotColor);
+        tft.drawPixel(127, 111, DotColor);
+
+      tft.drawPixel(0, 112, DotColor);               
+        tft.drawPixel(7, 112, DotColor);
+        tft.drawPixel(15, 112, DotColor);
+        tft.drawPixel(23, 112, DotColor);
+        tft.drawPixel(31, 112, DotColor);
+        tft.drawPixel(39, 112, DotColor);
+        tft.drawPixel(47, 112, DotColor);
+        tft.drawPixel(55, 112, DotColor);
+        tft.drawPixel(63, 112, DotColor);
+        tft.drawPixel(71, 112, DotColor);
+        tft.drawPixel(79, 112, DotColor);
+        tft.drawPixel(87, 112, DotColor);
+        tft.drawPixel(95, 112, DotColor);
+        tft.drawPixel(103, 112, DotColor);
+        tft.drawPixel(111, 112, DotColor);
+        tft.drawPixel(119, 112, DotColor);
+        tft.drawPixel(127, 112, DotColor);
+    
+      tft.drawLine(97, 1, 97, 16, VLinesColor);        // vertical Up Right Sat number                            
+      tft.drawLine(21, 140, 21, 158, VLinesColor);     // First vertical down left
+      tft.drawLine(69, 140, 69, 158, VLinesColor);     // Second
+      tft.drawLine(96, 140, 96, 158, VLinesColor);     // Third
+    //Fixed text  
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(1, 0);
+      tft.setTextWrap(false);
+      tft.print("Lat:");
+      
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(1, 10);
+      tft.setTextWrap(false);
+      tft.print("Lon:");
+
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(106, 0);
+      tft.setTextWrap(false);
+      tft.print("SAT:");
+
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(1, 29);
+      tft.setTextWrap(false);
+      tft.print("UTC:");
+      
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(1, 50);
+      tft.setTextWrap(false);
+      tft.print("Loc:");
+
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(1, 74);
+      tft.setTextWrap(false);
+      tft.print("G.asl:");  
+      
+      tft.setTextColor(BTextColor, BackGroundColor);     
+      tft.setTextSize(2);
+      tft.setCursor(118, 71);
+      tft.setTextWrap(false);
+      tft.print("m");
+
+      tft.setTextColor(QNHtextColor, BackGroundColor);   
+      tft.setTextSize(1);
+      tft.setCursor(1, 95);
+      tft.setTextWrap(false);
+      tft.print("QNH survey");
+      
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(2, 140);
+      tft.setTextWrap(false);
+      tft.print("DOP");
+      
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(26, 140);
+      tft.setTextWrap(false);
+      tft.print("QNH hPa");
+
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(73, 140);
+      tft.setTextWrap(false);
+      tft.print("T");
+
+      tft.drawCircle(85, 142, 2, FixedTextColor);
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(89, 140);
+      tft.setTextWrap(false);
+      tft.print("C");
+      
+      tft.setTextColor(FixedTextColor, BackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(102, 140);
+      tft.setTextWrap(false);
+      tft.print("Batt");
+      
+      tft.setTextColor(STextColor, BackGroundColor);  
+      tft.setTextSize(1);
+      tft.setCursor(121, 151);
+      tft.setTextWrap(false);
+      tft.print("V");
+    }
+
+
+void splashScreen(){
+   Serial.println(F("Now showing splash screen..."));
+      tft.fillScreen(SplashBackGroundColor);
+      tft.drawLine(0, 20, 127, 20, HLinesColor);       // Orizontala de sub Lat/Lon - prima de sus
+      tft.drawLine(0, 43, 127, 43, HLinesColor);       // Orizontala de sub UTC - a doua de sus
+      tft.drawLine(0, 66, 127, 66, HLinesColor);       // Orizontala de sub QTH Locator - a treia de sus
+      tft.drawLine(0, 137, 127, 137, HLinesColor);     // Orizontala de sub GPSasl - a patra de sus
+      tft.drawLine(0, 89, 127, 89, HLinesColor);       // Orizontala de sub graficul QNH - ultima de jos, sub Box
+      tft.setTextColor(WHITE, SplashBackGroundColor);
+      tft.setTextSize(2);
+      tft.setCursor(32, 25);
+      tft.setTextWrap(false);
+      tft.print("YO3HJV");        //YOUR CALL HERE
+      tft.setTextColor(YELLOW, SplashBackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(22, 50);
+      tft.setTextWrap(false);
+      tft.print("GPS Baro-Clock");
+      tft.setTextColor(MAGENTA, SplashBackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(2, 143);
+      tft.setTextWrap(false);
+      tft.print("Copyright YO3HJV 2023");
+      tft.setTextColor(RED, SplashBackGroundColor);
+      tft.setTextSize(1);
+      tft.setCursor(1, 0);
+      tft.setTextWrap(false);
+      tft.print("V: ");
+      tft.print(version,1);
+}
