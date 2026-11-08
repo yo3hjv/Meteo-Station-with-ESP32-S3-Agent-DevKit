@@ -10,6 +10,9 @@
 # BaroClock — ESP32-S3 Weather Station & Precision Barometer
 ---
 
+## - WARNING -
+The driver transistor (Q1) pads are  "in mirror" so that transistor must be removed and place "belly up" to make the proximity sensor properly work!
+
 ## 1. Project Overview
 
 **BaroClock** is an advanced meteorological monitor and precision instrument engineered for radio amateurs, mountain/outdoor weather enthusiasts, base stations, and electronics hobbyists. Combining high-speed hardware with continuous environmental analysis, BaroClock delivers:
